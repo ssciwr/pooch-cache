@@ -25,15 +25,29 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@v6
 
     - name: Install pooch
       shell: bash
       run: python -m pip install pooch
 
-    - name: Export XDG cache location
+    - name: Resolve pooch cache path
+      id: cache-path
       shell: bash
-      run: echo "XDG_CACHE_HOME=~/.cache" >> "$GITHUB_ENV"
+      run: |
+        CACHE_REL_PATH=".pooch-cache/${{ inputs.name }}"
+        CACHE_ABS_PATH="${GITHUB_WORKSPACE}/${CACHE_REL_PATH}"
+        mkdir -p "$CACHE_ABS_PATH"
+        echo "POOCH_CACHE_PATH=$CACHE_ABS_PATH" >> "$GITHUB_ENV"
+        echo "POOCH_CACHE_REL_PATH=$CACHE_REL_PATH" >> "$GITHUB_ENV"
+        echo "path=$CACHE_ABS_PATH" >> "$GITHUB_OUTPUT"
+
+    - name: Cache pooch cache
+      uses: actions/cache@v5
+      with:
+        path: .pooch-cache/${{ inputs.name }}
+        key: pooch-cache-${{ inputs.name }}
+        enableCrossOsArchive: true
 
     - name: Download data via pooch (no-op in case of cache hit)
       shell: python
@@ -43,7 +57,7 @@ runs:
         import pooch
 
         # Get the cache location
-        cache = pooch.os_cache("${{ inputs.name }}")
+        cache = os.environ["POOCH_CACHE_PATH"]
 
         # Parse the inputs into Python data structures
 
@@ -97,16 +111,25 @@ runs:
             pooch.retrieve(url=url, known_hash=hash, path=cache, processor=processor)
 
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-            f.write(f"pooch-cache-path={pooch.os_cache('${{ inputs.name }}')}")
-
-    - name: Cache pooch cache
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/${{ inputs.name }}
-        key: pooch-cache-${{ inputs.name }}
-        enableCrossOsArchive: true
+            f.write(f"pooch-cache-path={cache}")
 
     - name: Copy cache to the location where pooch will expect them
-      shell: bash
-      if: runner.os != 'Linux'
-      run: cp -r ~/.cache/${{ inputs.name }} ${{ steps.pooch-setup.outputs.pooch-cache-path }}
+      shell: python
+      run: |
+        import os
+        import shutil
+        from pathlib import Path
+        import pooch
+
+        source = Path(os.environ["POOCH_CACHE_PATH"])
+        dest = Path(pooch.os_cache("${{ inputs.name }}"))
+
+        print(f"Source: {source} (exists: {source.exists()})")
+        print(f"Dest: {dest}")
+
+        if source.exists() and source != dest:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(source, dest)
+            print(f"Copied {source} -> {dest}")
