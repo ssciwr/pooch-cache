@@ -1,0 +1,55 @@
+name: Test Pooch Caching
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test-cache-creation:
+    name: Test cache setup
+    runs-on: ubuntu-latest
+
+    steps:
+      #TODO: For better testing, it would be nice to first invalidate any cache that still exists
+
+      - uses: actions/checkout@v6
+
+      - uses: ./
+        with:
+          name: foo
+          dois: |
+            10.11588/data/TKCFEF/
+          file-urls: |
+            https://github.com/3dgeo-heidelberg/py4dgeo-test-data/releases/download/2024-06-28/data.tar.gz
+          known-hashes: |
+            5ee51a43b008181b829113d8b967cdf519eae4ac37a3301f1eaf53d15d3016cc
+          filename-whitelist:
+            tiny-data.txt
+
+  test-cache-consumption:
+    name: Test cache consumption
+    needs: [test-cache-creation]
+
+    # We do this on all three platforms, expecting the cache to work across platforms
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./
+        with:
+          name: foo
+
+      - name: Simple testing logic
+        shell: python
+        run: |
+          import pooch
+          from pathlib import Path
+
+          assert sum(1 for p in Path(pooch.os_cache("foo")).iterdir() if p.is_file()) == 2
