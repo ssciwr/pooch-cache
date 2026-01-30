@@ -17,6 +17,10 @@ inputs:
     description: "Registry files which download. Pass as new line separated string."
   filename-whitelist:
     description: "A whitelist of filenames used when downloading files from registries (useful for e.g. partial downloads from a DOI)"
+  extract:
+    description: "Whether to extract zip files after download"
+  extract-dir:
+    description: "Directory to extract zip files into (relative to pooch cache location). Only used if extract is true."
 
 runs:
   using: "composite"
@@ -58,6 +62,14 @@ runs:
         if len(file_urls) != len(known_hashes):
             raise ValueError("Number of file URLs must match number of known hashes")
 
+        extract = "${{ inputs.extract }}".lower() == "true"
+        extract_dir = "${{ inputs.extract-dir }}" or None
+
+        def maybe_extract(p, fn):
+            if extract and fn.lower().endswith(".zip"):
+                return p.fetch(fn, processor=pooch.Unzip(extract_dir=extract_dir))
+            return p.fetch(fn)
+
         # Download all DOI content
         for doi in dois:
             p = pooch.Pooch(base_url=f"doi:{doi}", path=cache)
@@ -66,7 +78,7 @@ runs:
             for fn in p.registry:
                 if whitelist and fn not in whitelist:
                     continue
-                p.fetch(fn)
+                maybe_extract(p, fn)
 
         # Download all registry content
         for base, reg in zip(base_urls, registry_files):
@@ -76,11 +88,13 @@ runs:
             for fn in p.registry:
                 if whitelist and fn not in whitelist:
                     continue
-                p.fetch(fn)
+                maybe_extract(p, fn)
 
         # Download all files
         for url, hash in zip(file_urls, known_hashes):
-            pooch.retrieve(url=url, known_hash=hash, path=cache)
+            filename = os.path.basename(url)
+            processor = pooch.Unzip(extract_dir=extract_dir) if (extract and filename.lower().endswith(".zip")) else None
+            pooch.retrieve(url=url, known_hash=hash, path=cache, processor=processor)
 
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
             f.write(f"pooch-cache-path={pooch.os_cache('${{ inputs.name }}')}")
