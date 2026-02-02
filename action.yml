@@ -18,9 +18,9 @@ inputs:
   filename-whitelist:
     description: "A whitelist of filenames used when downloading files from registries (useful for e.g. partial downloads from a DOI)"
   extract:
-    description: "Whether to extract zip files after download"
+    description: "Whether to extract archive files (zip, tar, tar.gz) after download"
   extract-dir:
-    description: "Directory to extract zip files into (relative to pooch cache location). Only used if extract is true."
+    description: "Directory to extract archive files into (relative to pooch cache location). Only used if extract is true."
   fail-on-cache-miss:
     description: "Fail the workflow if cache entry is not found. Default: false"
     default: "false"
@@ -84,8 +84,12 @@ runs:
         extract_dir = "${{ inputs.extract-dir }}" or None
 
         def maybe_extract(p, fn):
-            if extract and fn.lower().endswith(".zip"):
-                return p.fetch(fn, processor=pooch.Unzip(extract_dir=extract_dir))
+            fn_lower = fn.lower()
+            if extract:
+                if fn_lower.endswith(".zip"):
+                    return p.fetch(fn, processor=pooch.Unzip(extract_dir=extract_dir))
+                elif fn_lower.endswith((".tar", ".tar.gz", ".tgz")):
+                    return p.fetch(fn, processor=pooch.Untar(extract_dir=extract_dir))
             return p.fetch(fn)
 
         # Download all DOI content
@@ -111,7 +115,13 @@ runs:
         # Download all files
         for url, hash in zip(file_urls, known_hashes):
             filename = os.path.basename(url)
-            processor = pooch.Unzip(extract_dir=extract_dir) if (extract and filename.lower().endswith(".zip")) else None
+            fn_lower = filename.lower()
+            processor = None
+            if extract:
+                if fn_lower.endswith(".zip"):
+                    processor = pooch.Unzip(extract_dir=extract_dir)
+                elif fn_lower.endswith((".tar", ".tar.gz", ".tgz")):
+                    processor = pooch.Untar(extract_dir=extract_dir)
             pooch.retrieve(url=url, known_hash=hash, path=cache, processor=processor)
 
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
