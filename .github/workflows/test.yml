@@ -17,7 +17,7 @@ jobs:
     steps:
       #TODO: For better testing, it would be nice to first invalidate any cache that still exists
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: ./
         with:
@@ -42,7 +42,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./
         with:
           name: foo
